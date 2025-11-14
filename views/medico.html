@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel Médico - Sistema de Turnos</title>
+    <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+    <nav class="navbar">
+        <h1>👨‍⚕️ Panel Médico</h1>
+        <div class="user-info">
+            <span id="userName"></span>
+            <button class="btn btn-secondary" onclick="logout()">Cerrar Sesión</button>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div id="alert-container"></div>
+
+        <!-- Selector de Clínica -->
+        <div class="card">
+            <h2 class="card-header">Seleccione su Clínica</h2>
+            <div class="form-group">
+                <select id="clinicaSelect" class="form-control" onchange="seleccionarClinica()">
+                    <option value="">Seleccione una clínica</option>
+                </select>
+            </div>
+        </div>
+
+        <div id="panelClinica" style="display: none;">
+            <!-- Turno Actual en Atención -->
+            <div class="card">
+                <h2 class="card-header">Turno en Atención</h2>
+                <div id="turnoActual">
+                    <p class="text-center">No hay turno en atención</p>
+                </div>
+            </div>
+
+            <!-- Controles de Turnos -->
+            <div class="grid grid-3">
+                <div class="card">
+                    <button
+                        id="btnLlamar"
+                        class="btn btn-primary btn-lg"
+                        style="width: 100%; height: 100px;"
+                        onclick="llamarSiguiente()"
+                    >
+                        📢 Llamar Siguiente
+                    </button>
+                </div>
+
+                <div class="card">
+                    <button
+                        id="btnFinalizar"
+                        class="btn btn-success btn-lg"
+                        style="width: 100%; height: 100px;"
+                        onclick="finalizarTurno()"
+                        disabled
+                    >
+                        ✓ Finalizar Consulta
+                    </button>
+                </div>
+
+                <div class="card">
+                    <button
+                        id="btnAusente"
+                        class="btn btn-warning btn-lg"
+                        style="width: 100%; height: 100px;"
+                        onclick="marcarAusente()"
+                        disabled
+                    >
+                        ⚠ Marcar Ausente
+                    </button>
+                </div>
+            </div>
+
+            <!-- Estadísticas del Día -->
+            <div class="card">
+                <h2 class="card-header">Estadísticas del Día</h2>
+                <div class="grid grid-4" id="estadisticas">
+                    <div class="stats-card">
+                        <div class="number" id="statEspera">0</div>
+                        <div class="label">En Espera</div>
+                    </div>
+                    <div class="stats-card">
+                        <div class="number" id="statAtendiendo">0</div>
+                        <div class="label">En Atención</div>
+                    </div>
+                    <div class="stats-card">
+                        <div class="number" id="statFinalizados">0</div>
+                        <div class="label">Finalizados</div>
+                    </div>
+                    <div class="stats-card">
+                        <div class="number" id="statAusentes">0</div>
+                        <div class="label">Ausentes</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Lista de Turnos en Espera -->
+            <div class="card">
+                <h2 class="card-header">Cola de Espera</h2>
+                <div id="colaEspera">
+                    <div class="spinner"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        let token = localStorage.getItem('token');
+        let user = JSON.parse(localStorage.getItem('user'));
+        let socket;
+        let clinicaSeleccionada = null;
+        let turnoEnAtencion = null;
+
+        // Verificar autenticación
+        if (!token || !user) {
+            window.location.href = '/login';
+        }
+
+        document.getElementById('userName').textContent = user.nombreCompleto;
+
+        // Conectar WebSocket
+        socket = io();
+
+        // Escuchar eventos de WebSocket
+        socket.on('nuevo-turno', (data) => {
+            if (clinicaSeleccionada && data.ClinicaID === parseInt(clinicaSeleccionada)) {
+                cargarTurnosEspera();
+                cargarEstadisticas();
+            }
+        });
+
+        socket.on('turno-actualizado', (data) => {
+            if (clinicaSeleccionada) {
+                cargarTurnoActual();
+                cargarTurnosEspera();
+                cargarEstadisticas();
+            }
+        });
+
+        // Cargar clínicas al inicio
+        cargarClinicas();
+
+        async function cargarClinicas() {
+            try {
+                const response = await fetch('/api/clinicas', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    const select = document.getElementById('clinicaSelect');
+                    data.data.forEach(clinica => {
+                        const option = document.createElement('option');
+                        option.value = clinica.ClinicaID;
+                        option.textContent = clinica.NombreClinica;
+                        select.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Error al cargar clínicas:', error);
+            }
+        }
+
+        function seleccionarClinica() {
+            clinicaSeleccionada = document.getElementById('clinicaSelect').value;
+
+            if (clinicaSeleccionada) {
+                document.getElementById('panelClinica').style.display = 'block';
+                socket.emit('join-clinica', clinicaSeleccionada);
+                cargarTurnoActual();
+                cargarTurnosEspera();
+                cargarEstadisticas();
+            } else {
+                document.getElementById('panelClinica').style.display = 'none';
+            }
+        }
+
+        async function cargarTurnoActual() {
+            try {
+                const response = await fetch(`/api/turnos/clinica/${clinicaSeleccionada}/actual`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success && data.data) {
+                    turnoEnAtencion = data.data;
+                    mostrarTurnoActual(data.data);
+                    habilitarBotones(true);
+                } else {
+                    turnoEnAtencion = null;
+                    mostrarSinTurno();
+                    habilitarBotones(false);
+                }
+            } catch (error) {
+                console.error('Error al cargar turno actual:', error);
+            }
+        }
+
+        function mostrarTurnoActual(turno) {
+            const container = document.getElementById('turnoActual');
+            container.innerHTML = `
+                <div class="display-turno">
+                    <div class="turno-numero">${turno.NumeroTurno}</div>
+                    <div class="turno-paciente">${turno.NombrePaciente}</div>
+                    ${turno.MotivoConsulta ? `<p style="margin-top: 10px; font-size: 1rem;">${turno.MotivoConsulta}</p>` : ''}
+                </div>
+            `;
+        }
+
+        function mostrarSinTurno() {
+            const container = document.getElementById('turnoActual');
+            container.innerHTML = '<p class="text-center" style="padding: 40px; color: var(--text-secondary);">No hay turno en atención</p>';
+        }
+
+        function habilitarBotones(enable) {
+            document.getElementById('btnFinalizar').disabled = !enable;
+            document.getElementById('btnAusente').disabled = !enable;
+            document.getElementById('btnLlamar').disabled = enable;
+        }
+
+        async function llamarSiguiente() {
+            try {
+                const response = await fetch('/api/turnos/llamar', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        clinicaId: parseInt(clinicaSeleccionada)
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showAlert(`Turno ${data.data.NumeroTurno} llamado`, 'success');
+                    cargarTurnoActual();
+                    cargarTurnosEspera();
+                    cargarEstadisticas();
+                } else {
+                    showAlert(data.message, 'warning');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showAlert('Error al llamar turno', 'danger');
+            }
+        }
+
+        async function finalizarTurno() {
+            if (!turnoEnAtencion) return;
+
+            try {
+                const response = await fetch(`/api/turnos/${turnoEnAtencion.TurnoID}/finalizar`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showAlert('Turno finalizado exitosamente', 'success');
+                    cargarTurnoActual();
+                    cargarTurnosEspera();
+                    cargarEstadisticas();
+                } else {
+                    showAlert(data.message, 'danger');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showAlert('Error al finalizar turno', 'danger');
+            }
+        }
+
+        async function marcarAusente() {
+            if (!turnoEnAtencion) return;
+
+            if (!confirm('¿Está seguro de marcar este turno como ausente?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/turnos/${turnoEnAtencion.TurnoID}/ausente`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showAlert('Turno marcado como ausente', 'warning');
+                    cargarTurnoActual();
+                    cargarTurnosEspera();
+                    cargarEstadisticas();
+                } else {
+                    showAlert(data.message, 'danger');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showAlert('Error al marcar ausente', 'danger');
+            }
+        }
+
+        async function cargarTurnosEspera() {
+            try {
+                const response = await fetch(`/api/turnos/activos?clinicaId=${clinicaSeleccionada}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    const turnosEspera = data.data.filter(t => t.Estado === 'espera');
+                    mostrarColaEspera(turnosEspera);
+                }
+            } catch (error) {
+                console.error('Error al cargar turnos en espera:', error);
+            }
+        }
+
+        function mostrarColaEspera(turnos) {
+            const container = document.getElementById('colaEspera');
+
+            if (turnos.length === 0) {
+                container.innerHTML = '<p class="text-center">No hay turnos en espera</p>';
+                return;
+            }
+
+            let html = '<table class="table"><thead><tr><th>Turno</th><th>Paciente</th><th>Motivo</th></tr></thead><tbody>';
+
+            turnos.forEach(turno => {
+                html += `
+                    <tr>
+                        <td><strong style="font-size: 1.2rem;">${turno.NumeroTurno}</strong></td>
+                        <td>${turno.NombrePaciente}</td>
+                        <td>${turno.MotivoConsulta || 'N/A'}</td>
+                    </tr>
+                `;
+            });
+
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        async function cargarEstadisticas() {
+            try {
+                const response = await fetch(`/api/clinicas/${clinicaSeleccionada}/estadisticas`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    document.getElementById('statEspera').textContent = data.data.EnEspera;
+                    document.getElementById('statAtendiendo').textContent = data.data.EnAtencion;
+                    document.getElementById('statFinalizados').textContent = data.data.Finalizados;
+                    document.getElementById('statAusentes').textContent = data.data.Ausentes;
+                }
+            } catch (error) {
+                console.error('Error al cargar estadísticas:', error);
+            }
+        }
+
+        function showAlert(message, type) {
+            const alertContainer = document.getElementById('alert-container');
+            alertContainer.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+            setTimeout(() => {
+                alertContainer.innerHTML = '';
+            }, 5000);
+        }
+
+        function logout() {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            window.location.href = '/login';
+        }
+    </script>
+</body>
+</html>

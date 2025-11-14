@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Turnos Hospitalarios</title>
+    <link rel="stylesheet" href="/css/styles.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .home-container {
+            text-align: center;
+            color: white;
+        }
+
+        .home-container h1 {
+            font-size: 3.5rem;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .home-container .subtitle {
+            font-size: 1.5rem;
+            margin-bottom: 50px;
+            opacity: 0.9;
+        }
+
+        .options-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 30px;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .option-card {
+            background: white;
+            padding: 40px 30px;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            cursor: pointer;
+            text-decoration: none;
+            color: var(--dark-color);
+            display: block;
+        }
+
+        .option-card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 30px 80px rgba(0, 0, 0, 0.4);
+        }
+
+        .option-card .icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+        }
+
+        .option-card h2 {
+            font-size: 1.5rem;
+            margin-bottom: 10px;
+            color: var(--primary-color);
+        }
+
+        .option-card p {
+            color: var(--text-secondary);
+            font-size: 1rem;
+        }
+
+        .footer {
+            margin-top: 60px;
+            color: white;
+            opacity: 0.8;
+            text-align: center;
+        }
+
+        @media (max-width: 768px) {
+            .home-container h1 {
+                font-size: 2rem;
+            }
+
+            .home-container .subtitle {
+                font-size: 1.2rem;
+            }
+
+            .options-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="home-container">
+        <h1>🏥 Sistema de Turnos Hospitalarios</h1>
+        <p class="subtitle">Gestión eficiente de atención médica</p>
+
+        <div class="options-grid">
+            <a href="/login" class="option-card">
+                <div class="icon">🔐</div>
+                <h2>Iniciar Sesión</h2>
+                <p>Acceso para personal médico y administrativo</p>
+            </a>
+
+            <a href="/display" class="option-card">
+                <div class="icon">📺</div>
+                <h2>Pantalla de Turnos</h2>
+                <p>Visualización en tiempo real para pacientes</p>
+            </a>
+
+            <a href="#info" class="option-card" onclick="mostrarInfo(event)">
+                <div class="icon">ℹ️</div>
+                <h2>Información</h2>
+                <p>Acerca del sistema</p>
+            </a>
+        </div>
+
+        <div class="footer">
+            <p>Sistema de Cola de Turnos para Pacientes</p>
+            <p>Desarrollo Web 2025 - UMG</p>
+        </div>
+    </div>
+
+    <!-- Modal de información -->
+    <div id="infoModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; padding: 20px; overflow-y: auto;">
+        <div style="max-width: 800px; margin: 50px auto; background: white; padding: 40px; border-radius: 16px; position: relative;">
+            <button onclick="cerrarInfo()" style="position: absolute; top: 20px; right: 20px; background: var(--danger-color); color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 1rem;">
+                Cerrar
+            </button>
+
+            <h2 style="color: var(--primary-color); margin-bottom: 20px;">Información del Sistema</h2>
+
+            <h3 style="color: var(--dark-color); margin-top: 30px;">¿Qué es este sistema?</h3>
+            <p style="color: var(--text-secondary); line-height: 1.8;">
+                Este es un Sistema Visual de Cola de Turnos para Pacientes, diseñado para mejorar la eficiencia
+                operativa de hospitales, clínicas y centros de salud. Permite gestionar el flujo de atención de
+                pacientes de manera organizada y en tiempo real.
+            </p>
+
+            <h3 style="color: var(--dark-color); margin-top: 30px;">Características principales:</h3>
+            <ul style="color: var(--text-secondary); line-height: 1.8; margin-left: 20px;">
+                <li>Módulo de preclasificación/triaje para asignación de pacientes</li>
+                <li>Panel de control para médicos con gestión de turnos</li>
+                <li>Pantalla informativa en tiempo real para pacientes</li>
+                <li>Actualización automática mediante WebSockets</li>
+                <li>Autenticación segura con JWT</li>
+                <li>Estadísticas y reportes del día</li>
+            </ul>
+
+            <h3 style="color: var(--dark-color); margin-top: 30px;">Roles de usuario:</h3>
+            <ul style="color: var(--text-secondary); line-height: 1.8; margin-left: 20px;">
+                <li><strong>Recepción/Enfermería:</strong> Registro de pacientes y asignación de turnos</li>
+                <li><strong>Médico:</strong> Control del flujo de atención, llamado de turnos</li>
+                <li><strong>Administrador:</strong> Gestión completa del sistema</li>
+            </ul>
+
+            <h3 style="color: var(--dark-color); margin-top: 30px;">Tecnologías utilizadas:</h3>
+            <p style="color: var(--text-secondary); line-height: 1.8;">
+                Node.js, Express, Socket.IO, SQL Server, JWT, HTML5, CSS3, JavaScript
+            </p>
+        </div>
+    </div>
+
+    <script>
+        function mostrarInfo(event) {
+            event.preventDefault();
+            document.getElementById('infoModal').style.display = 'block';
+        }
+
+        function cerrarInfo() {
+            document.getElementById('infoModal').style.display = 'none';
+        }
+
+        // Cerrar modal al hacer clic fuera de él
+        document.getElementById('infoModal')?.addEventListener('click', (e) => {
+            if (e.target.id === 'infoModal') {
+                cerrarInfo();
+            }
+        });
+    </script>
+</body>
+</html>

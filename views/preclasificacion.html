@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Preclasificación / Triaje - Sistema de Turnos</title>
+    <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+    <nav class="navbar">
+        <h1>🏥 Sistema de Turnos - Preclasificación</h1>
+        <div class="user-info">
+            <span id="userName"></span>
+            <button class="btn btn-secondary" onclick="logout()">Cerrar Sesión</button>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div id="alert-container"></div>
+
+        <div class="grid grid-2">
+            <!-- Formulario de Registro de Turno -->
+            <div class="card">
+                <h2 class="card-header">Registrar Nuevo Turno</h2>
+
+                <form id="turnoForm">
+                    <!-- Sección: Buscar o Crear Paciente -->
+                    <div class="form-group">
+                        <label for="buscarDPI">Buscar Paciente por DPI</label>
+                        <div style="display: flex; gap: 10px;">
+                            <input
+                                type="text"
+                                id="buscarDPI"
+                                class="form-control"
+                                placeholder="Ingrese DPI"
+                            >
+                            <button type="button" class="btn btn-primary" onclick="buscarPaciente()">
+                                Buscar
+                            </button>
+                        </div>
+                    </div>
+
+                    <hr style="margin: 20px 0; border: 1px solid var(--light-color);">
+
+                    <div class="form-group">
+                        <label for="nombrePaciente">Nombre Completo del Paciente *</label>
+                        <input
+                            type="text"
+                            id="nombrePaciente"
+                            class="form-control"
+                            placeholder="Nombre completo"
+                            required
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label for="dpiPaciente">DPI (opcional)</label>
+                        <input
+                            type="text"
+                            id="dpiPaciente"
+                            class="form-control"
+                            placeholder="1234567890101"
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label for="telefonoPaciente">Teléfono (opcional)</label>
+                        <input
+                            type="text"
+                            id="telefonoPaciente"
+                            class="form-control"
+                            placeholder="12345678"
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label for="clinica">Clínica Asignada *</label>
+                        <select id="clinica" class="form-control" required>
+                            <option value="">Seleccione una clínica</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="motivoConsulta">Motivo de Consulta</label>
+                        <textarea
+                            id="motivoConsulta"
+                            class="form-control"
+                            placeholder="Describa brevemente el motivo de la consulta..."
+                        ></textarea>
+                    </div>
+
+                    <button type="submit" class="btn btn-success btn-lg" style="width: 100%;">
+                        Crear Turno
+                    </button>
+                </form>
+
+                <input type="hidden" id="pacienteId">
+            </div>
+
+            <!-- Lista de Turnos del Día -->
+            <div class="card">
+                <h2 class="card-header">Turnos del Día</h2>
+
+                <div class="form-group">
+                    <label for="filtroClinica">Filtrar por Clínica</label>
+                    <select id="filtroClinica" class="form-control" onchange="cargarTurnos()">
+                        <option value="">Todas las clínicas</option>
+                    </select>
+                </div>
+
+                <div id="turnos-list" style="max-height: 600px; overflow-y: auto;">
+                    <div class="spinner"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        let token = localStorage.getItem('token');
+        let user = JSON.parse(localStorage.getItem('user'));
+        let socket;
+
+        // Verificar autenticación
+        if (!token || !user) {
+            window.location.href = '/login';
+        }
+
+        document.getElementById('userName').textContent = user.nombreCompleto;
+
+        // Conectar WebSocket
+        socket = io();
+
+        // Cargar clínicas al inicio
+        cargarClinicas();
+        cargarTurnos();
+
+        // Escuchar eventos de WebSocket
+        socket.on('nuevo-turno', (data) => {
+            showAlert('Nuevo turno creado', 'success');
+            cargarTurnos();
+        });
+
+        socket.on('turno-actualizado', (data) => {
+            cargarTurnos();
+        });
+
+        // Enviar formulario de turno
+        document.getElementById('turnoForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const nombrePaciente = document.getElementById('nombrePaciente').value;
+            const dpiPaciente = document.getElementById('dpiPaciente').value;
+            const telefonoPaciente = document.getElementById('telefonoPaciente').value;
+            const clinicaId = document.getElementById('clinica').value;
+            const motivoConsulta = document.getElementById('motivoConsulta').value;
+            let pacienteId = document.getElementById('pacienteId').value;
+
+            try {
+                // Si no hay pacienteId, crear nuevo paciente
+                if (!pacienteId) {
+                    const pacienteResponse = await fetch('/api/pacientes', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({
+                            nombreCompleto: nombrePaciente,
+                            dpi: dpiPaciente || null,
+                            telefono: telefonoPaciente || null
+                        })
+                    });
+
+                    const pacienteData = await pacienteResponse.json();
+
+                    if (!pacienteData.success) {
+                        showAlert(pacienteData.message, 'danger');
+                        return;
+                    }
+
+                    pacienteId = pacienteData.data.PacienteID;
+                }
+
+                // Crear turno
+                const turnoResponse = await fetch('/api/turnos', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        pacienteId: parseInt(pacienteId),
+                        clinicaId: parseInt(clinicaId),
+                        motivoConsulta
+                    })
+                });
+
+                const turnoData = await turnoResponse.json();
+
+                if (turnoData.success) {
+                    showAlert(`Turno creado exitosamente. Número: ${turnoData.data.NumeroTurno}`, 'success');
+                    document.getElementById('turnoForm').reset();
+                    document.getElementById('pacienteId').value = '';
+                    cargarTurnos();
+                } else {
+                    showAlert(turnoData.message, 'danger');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showAlert('Error al crear turno', 'danger');
+            }
+        });
+
+        async function cargarClinicas() {
+            try {
+                const response = await fetch('/api/clinicas', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    const selectClinica = document.getElementById('clinica');
+                    const selectFiltro = document.getElementById('filtroClinica');
+
+                    data.data.forEach(clinica => {
+                        const option = document.createElement('option');
+                        option.value = clinica.ClinicaID;
+                        option.textContent = clinica.NombreClinica;
+                        selectClinica.appendChild(option);
+
+                        const optionFiltro = document.createElement('option');
+                        optionFiltro.value = clinica.ClinicaID;
+                        optionFiltro.textContent = clinica.NombreClinica;
+                        selectFiltro.appendChild(optionFiltro);
+                    });
+                }
+            } catch (error) {
+                console.error('Error al cargar clínicas:', error);
+            }
+        }
+
+        async function cargarTurnos() {
+            const clinicaId = document.getElementById('filtroClinica').value;
+            const url = clinicaId
+                ? `/api/turnos/activos?clinicaId=${clinicaId}`
+                : '/api/turnos/activos';
+
+            try {
+                const response = await fetch(url, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    mostrarTurnos(data.data);
+                }
+            } catch (error) {
+                console.error('Error al cargar turnos:', error);
+            }
+        }
+
+        function mostrarTurnos(turnos) {
+            const container = document.getElementById('turnos-list');
+
+            if (turnos.length === 0) {
+                container.innerHTML = '<p class="text-center">No hay turnos activos</p>';
+                return;
+            }
+
+            let html = '<table class="table"><thead><tr><th>Turno</th><th>Paciente</th><th>Clínica</th><th>Estado</th></tr></thead><tbody>';
+
+            turnos.forEach(turno => {
+                html += `
+                    <tr>
+                        <td><strong>${turno.NumeroTurno}</strong></td>
+                        <td>${turno.NombrePaciente}</td>
+                        <td>${turno.NombreClinica}</td>
+                        <td><span class="badge badge-${turno.Estado}">${turno.Estado}</span></td>
+                    </tr>
+                `;
+            });
+
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        async function buscarPaciente() {
+            const dpi = document.getElementById('buscarDPI').value.trim();
+
+            if (!dpi) {
+                showAlert('Ingrese un DPI para buscar', 'warning');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/pacientes/dpi/${dpi}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    document.getElementById('nombrePaciente').value = data.data.NombreCompleto;
+                    document.getElementById('dpiPaciente').value = data.data.DPI || '';
+                    document.getElementById('telefonoPaciente').value = data.data.Telefono || '';
+                    document.getElementById('pacienteId').value = data.data.PacienteID;
+                    showAlert('Paciente encontrado', 'success');
+                } else {
+                    showAlert('Paciente no encontrado', 'info');
+                    document.getElementById('dpiPaciente').value = dpi;
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showAlert('Error al buscar paciente', 'danger');
+            }
+        }
+
+        function showAlert(message, type) {
+            const alertContainer = document.getElementById('alert-container');
+            alertContainer.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+            setTimeout(() => {
+                alertContainer.innerHTML = '';
+            }, 5000);
+        }
+
+        function logout() {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            window.location.href = '/login';
+        }
+    </script>
+</body>
+</html>

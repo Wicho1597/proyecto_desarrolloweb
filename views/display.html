@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Display de Turnos - Sistema de Turnos</title>
+    <link rel="stylesheet" href="/css/styles.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+        }
+
+        .display-header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .display-header h1 {
+            font-size: 3rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .display-header .fecha {
+            font-size: 1.5rem;
+            opacity: 0.9;
+        }
+
+        .turnos-display {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .turno-card {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            animation: fadeIn 0.5s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .turno-card.activo {
+            border: 4px solid var(--success-color);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            }
+            50% {
+                box-shadow: 0 20px 60px rgba(16, 185, 129, 0.5);
+            }
+        }
+
+        .turno-card .clinica-nombre {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--primary-color);
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid var(--light-color);
+        }
+
+        .turno-card .turno-numero {
+            font-size: 5rem;
+            font-weight: 700;
+            color: var(--dark-color);
+            margin-bottom: 10px;
+        }
+
+        .turno-card .estado {
+            font-size: 1.2rem;
+            font-weight: 600;
+            padding: 10px 20px;
+            border-radius: 30px;
+            display: inline-block;
+            margin-bottom: 15px;
+        }
+
+        .turno-card .estado.atendiendo {
+            background: var(--success-color);
+            color: white;
+        }
+
+        .turno-card .proximos {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 2px solid var(--light-color);
+            font-size: 1rem;
+            color: var(--text-secondary);
+        }
+
+        .turno-card .proximos-lista {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 10px;
+            flex-wrap: wrap;
+        }
+
+        .turno-card .proximo-numero {
+            background: var(--light-color);
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 1.2rem;
+        }
+
+        .sin-turnos {
+            background: white;
+            border-radius: 16px;
+            padding: 60px 30px;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        .sin-turnos-icon {
+            font-size: 5rem;
+            margin-bottom: 20px;
+        }
+
+        .sin-turnos h2 {
+            color: var(--text-secondary);
+            font-size: 2rem;
+        }
+
+        @media (max-width: 768px) {
+            .display-header h1 {
+                font-size: 2rem;
+            }
+
+            .display-header .fecha {
+                font-size: 1rem;
+            }
+
+            .turnos-display {
+                grid-template-columns: 1fr;
+            }
+
+            .turno-card .turno-numero {
+                font-size: 3rem;
+            }
+
+            .turno-card .clinica-nombre {
+                font-size: 1.2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="display-header">
+        <h1>🏥 SISTEMA DE TURNOS</h1>
+        <div class="fecha" id="fechaActual"></div>
+        <div class="fecha" id="horaActual"></div>
+    </div>
+
+    <div id="turnosContainer" class="turnos-display">
+        <div class="sin-turnos">
+            <div class="sin-turnos-icon">⏳</div>
+            <h2>Cargando turnos...</h2>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        let socket;
+        let clinicasTurnos = {};
+
+        // Conectar WebSocket
+        socket = io();
+        socket.emit('join-display');
+
+        // Actualizar fecha y hora
+        function actualizarFechaHora() {
+            const ahora = new Date();
+
+            const opciones = {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+            };
+
+            const fecha = ahora.toLocaleDateString('es-ES', opciones);
+            const hora = ahora.toLocaleTimeString('es-ES');
+
+            document.getElementById('fechaActual').textContent = fecha;
+            document.getElementById('horaActual').textContent = hora;
+        }
+
+        actualizarFechaHora();
+        setInterval(actualizarFechaHora, 1000);
+
+        // Cargar turnos al inicio
+        cargarTurnos();
+
+        // Recargar turnos cada 10 segundos
+        setInterval(cargarTurnos, 10000);
+
+        // Escuchar eventos de WebSocket
+        socket.on('nuevo-turno', (data) => {
+            cargarTurnos();
+        });
+
+        socket.on('turno-llamado', (data) => {
+            cargarTurnos();
+            // Efecto de sonido o animación especial
+            mostrarNotificacionTurno(data);
+        });
+
+        socket.on('turno-actualizado', (data) => {
+            cargarTurnos();
+        });
+
+        socket.on('turno-finalizado', (data) => {
+            cargarTurnos();
+        });
+
+        async function cargarTurnos() {
+            try {
+                // Obtener todas las clínicas
+                const clinicasResponse = await fetch('/api/clinicas');
+                const clinicasData = await clinicasResponse.json();
+
+                if (!clinicasData.success) return;
+
+                const clinicas = clinicasData.data;
+
+                // Obtener turnos activos
+                const turnosResponse = await fetch('/api/turnos/activos');
+                const turnosData = await turnosResponse.json();
+
+                if (!turnosData.success) return;
+
+                const turnos = turnosData.data;
+
+                // Organizar turnos por clínica
+                clinicasTurnos = {};
+
+                clinicas.forEach(clinica => {
+                    const turnosClinica = turnos.filter(t => t.ClinicaID === clinica.ClinicaID);
+
+                    clinicasTurnos[clinica.ClinicaID] = {
+                        nombre: clinica.NombreClinica,
+                        turnoActual: turnosClinica.find(t => t.Estado === 'atendiendo'),
+                        turnosEspera: turnosClinica.filter(t => t.Estado === 'espera')
+                    };
+                });
+
+                mostrarTurnos();
+            } catch (error) {
+                console.error('Error al cargar turnos:', error);
+            }
+        }
+
+        function mostrarTurnos() {
+            const container = document.getElementById('turnosContainer');
+
+            // Filtrar clínicas que tienen turnos
+            const clinicasConTurnos = Object.entries(clinicasTurnos).filter(
+                ([id, data]) => data.turnoActual || data.turnosEspera.length > 0
+            );
+
+            if (clinicasConTurnos.length === 0) {
+                container.innerHTML = `
+                    <div class="sin-turnos">
+                        <div class="sin-turnos-icon">✅</div>
+                        <h2>No hay turnos activos en este momento</h2>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = '';
+
+            clinicasConTurnos.forEach(([clinicaId, data]) => {
+                const tieneActual = data.turnoActual;
+                const proximosTurnos = data.turnosEspera.slice(0, 3);
+
+                html += `
+                    <div class="turno-card ${tieneActual ? 'activo' : ''}">
+                        <div class="clinica-nombre">${data.nombre}</div>
+
+                        ${tieneActual ? `
+                            <div class="estado atendiendo">ATENDIENDO AHORA</div>
+                            <div class="turno-numero">${tieneActual.NumeroTurno}</div>
+                        ` : `
+                            <div class="turno-numero" style="opacity: 0.5;">---</div>
+                            <p style="color: var(--text-secondary);">Sin turno en atención</p>
+                        `}
+
+                        ${proximosTurnos.length > 0 ? `
+                            <div class="proximos">
+                                <strong>Próximos:</strong>
+                                <div class="proximos-lista">
+                                    ${proximosTurnos.map(t => `
+                                        <div class="proximo-numero">${t.NumeroTurno}</div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        function mostrarNotificacionTurno(data) {
+            // Aquí podrías agregar un efecto especial cuando se llama un turno
+            console.log('Turno llamado:', data);
+
+            // Ejemplo: reproducir sonido (requiere archivo de audio)
+            // const audio = new Audio('/sounds/notification.mp3');
+            // audio.play();
+        }
+    </script>
+</body>
+</html>
